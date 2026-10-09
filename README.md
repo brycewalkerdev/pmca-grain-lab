@@ -2,6 +2,8 @@
 
 A standalone PlayMemories camera app that adds grain, halation, bloom and other film/lens effects to a selected JPEG, entirely on the camera. It does not open the capture pipeline or change Recipe Lab or the camera's stored settings. Recipe Lab provides the base color look; this app adds spatial effects and texture.
 
+**Development disclaimer:** Grain Lab's application code was generated agentically using GPT-6.1-Sol. Vendored third-party libraries retain their original authorship and licenses.
+
 ## Install
 
 Download `GrainLab.apk` from [GitHub Releases](https://github.com/brycewalkerdev/pmca-grain-lab/releases/latest), or build it locally into `dist/GrainLab.apk`. Install through Sony-PMCA-RE / PMCA-GUI's **Install app from file**, then launch **Grain Lab** from the camera's Application List. It has a separate package (`com.bryce.grainlab`) and can coexist with Recipe Lab.
