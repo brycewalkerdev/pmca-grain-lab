@@ -1,4 +1,5 @@
-param([string]$AndroidTools = $env:GRAIN_ANDROID_TOOLS, [string]$Python = 'python', [switch]$TestsOnly)
+param([string]$AndroidTools = $env:GRAIN_ANDROID_TOOLS, [string]$Python = 'python', [switch]$TestsOnly,
+    [string]$JavaHome = $env:GRAIN_JAVA_HOME, [string]$AndroidSdk = $env:GRAIN_ANDROID_SDK)
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
 $taskBuildNumber = 20
@@ -8,14 +9,20 @@ function Checked([string]$Executable, [string[]]$Arguments) {
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) { throw "Build tool failed: $Executable ($LASTEXITCODE)" }
 }
-if (!$AndroidTools) {
+if (!$AndroidTools -and !($JavaHome -and $AndroidSdk)) {
     $taskToolCandidates = @((Join-Path (Split-Path $taskRoot) 'flappy-bird\tools'), (Join-Path (Split-Path (Split-Path $taskRoot)) 'flappy-bird\tools'))
     $AndroidTools = $taskToolCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (!$AndroidTools) { throw 'Set GRAIN_ANDROID_TOOLS to the Java + Android tool bundle.' }
 }
-$taskJava = (Get-ChildItem "$AndroidTools\java" -Directory | Select-Object -First 1).FullName + '\bin'
-$taskBT = Split-Path (Get-ChildItem "$AndroidTools\android" -Recurse -Filter aapt.exe | Select-Object -First 1).FullName
-$taskJar = (Get-ChildItem "$AndroidTools\android" -Recurse -Filter android.jar | Select-Object -First 1).FullName
+if ($JavaHome -and $AndroidSdk) {
+    $taskJava = Join-Path $JavaHome 'bin'
+    $taskBT = Join-Path $AndroidSdk 'build-tools\35.0.0'
+    $taskJar = Join-Path $AndroidSdk 'platforms\android-28\android.jar'
+} else {
+    $taskJava = (Get-ChildItem "$AndroidTools\java" -Directory | Select-Object -First 1).FullName + '\bin'
+    $taskBT = Split-Path (Get-ChildItem "$AndroidTools\android" -Recurse -Filter aapt.exe | Select-Object -First 1).FullName
+    $taskJar = (Get-ChildItem "$AndroidTools\android" -Recurse -Filter android.jar | Select-Object -First 1).FullName
+}
 if (!$taskJar -or !(Test-Path "$taskJava\javac.exe")) { throw 'Set GRAIN_ANDROID_TOOLS to the Java + Android tool bundle.' }
 New-Item -ItemType Directory -Force out\tests | Out-Null
 Checked "$taskJava\javac.exe" @('--release','8','-encoding','UTF-8','-d','out\tests',
@@ -62,14 +69,25 @@ Copy-Item -LiteralPath out\native-v7\libgrainlab.so -Destination "$taskBuild\pac
 Push-Location "$taskBuild\package"
 try { Checked "$taskBT\aapt.exe" @('add',"$taskBuild\unsigned.apk",'lib/armeabi/libgrainlab.so','lib/armeabi-v7a/libgrainlab.so') } finally { Pop-Location }
 Checked "$taskBT\zipalign.exe" @('-f','4',"$taskBuild\unsigned.apk","$taskBuild\aligned.apk")
-$taskKey = "$taskRoot\out\grain-lab.keystore"
+$taskKey = $env:GRAIN_KEYSTORE
+if (!$taskKey) { $taskKey = "$taskRoot\out\grain-lab.keystore" }
+$taskKeyAlias = $env:GRAIN_KEY_ALIAS
+if (!$taskKeyAlias) { $taskKeyAlias = 'grainlab' }
+if ($env:CI -eq 'true' -and (!$env:GRAIN_KEYSTORE -or !$env:GRAIN_STORE_PASSWORD -or !$env:GRAIN_KEY_PASSWORD)) {
+    throw 'CI requires the persistent signing keystore and both signing passwords; refusing to generate an ephemeral key.'
+}
 if (!(Test-Path -LiteralPath $taskKey)) {
+    if ($env:GRAIN_KEYSTORE) { throw 'The configured signing keystore does not exist.' }
     Checked "$taskJava\keytool.exe" @('-genkeypair','-keystore',$taskKey,'-alias','grainlab','-keyalg','RSA','-keysize','2048',
         '-validity','10000','-storepass','android','-keypass','android','-dname','CN=Grain Lab Development')
 }
 New-Item -ItemType Directory -Force dist | Out-Null
 $taskAPK = "$taskRoot\dist\GrainLab.apk"
-Checked "$taskJava\java.exe" @('-jar',"$taskBT\lib\apksigner.jar",'sign','--ks',$taskKey,'--ks-pass','pass:android','--key-pass','pass:android',
+$taskStorePass = 'pass:android'
+$taskKeyPass = 'pass:android'
+if ($env:GRAIN_STORE_PASSWORD) { $taskStorePass = 'env:GRAIN_STORE_PASSWORD' }
+if ($env:GRAIN_KEY_PASSWORD) { $taskKeyPass = 'env:GRAIN_KEY_PASSWORD' }
+Checked "$taskJava\java.exe" @('-jar',"$taskBT\lib\apksigner.jar",'sign','--ks',$taskKey,'--ks-key-alias',$taskKeyAlias,'--ks-pass',$taskStorePass,'--key-pass',$taskKeyPass,
     '--min-sdk-version','10','--v1-signing-enabled','true','--v2-signing-enabled','false','--v3-signing-enabled','false','--v4-signing-enabled','false',
     '--out',$taskAPK,"$taskBuild\aligned.apk")
 Checked "$taskJava\java.exe" @('-jar',"$taskBT\lib\apksigner.jar",'verify','--verbose','--min-sdk-version','10',$taskAPK)

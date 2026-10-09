@@ -96,6 +96,10 @@ These proprietary paths are not automatically substituted into the effect pipeli
 
 ## Build and tests (Windows)
 
+GitHub can build signed APKs and create draft releases using the **Create release**
+workflow. See [release setup and commands](docs/RELEASING.md) for the persistent
+signing-key secrets and dry-run option.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
 powershell -ExecutionPolicy Bypass -File build.ps1 -TestsOnly
