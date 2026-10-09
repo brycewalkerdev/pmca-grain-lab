@@ -31,6 +31,7 @@
     <string name="halation">光暈</string>
     <string name="halation_radius">光暈擴散</string>
     <string name="highlight_threshold">高光閾值</string>
+    <string name="threshold_hint">0–95%：降低可包含更多高光；提高可僅選最亮區域。</string>
     <string name="bloom">輝光</string>
     <string name="bloom_radius">輝光擴散</string>
     <string name="diffusion">柔化</string>

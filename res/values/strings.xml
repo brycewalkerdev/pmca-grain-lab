@@ -31,6 +31,7 @@
     <string name="halation">Halation</string>
     <string name="halation_radius">Halation spread</string>
     <string name="highlight_threshold">Highlight threshold</string>
+    <string name="threshold_hint">0–95%: lower includes more highlights; higher isolates bright cores.</string>
     <string name="bloom">Bloom</string>
     <string name="bloom_radius">Bloom spread</string>
     <string name="diffusion">Diffusion</string>
