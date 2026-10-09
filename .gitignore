@@ -1,0 +1,7 @@
+out/
+dist/
+*.keystore
+vendor/*.tar.gz
+__pycache__/
+*.pyc
+*.smali
