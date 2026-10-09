@@ -137,6 +137,18 @@ public final class SonyIntegrationTest {
         JpegExporter.code=-2;
         try{SonyJpegStream.encode(callbackExporter,callbackImage,callbackOptions,new StringBuilder(),null);throw new AssertionError("Native stream error ignored");}catch(IllegalStateException e){check(e.getMessage().contains("-2"),"exact native error preserved");}
         callbackImage.release();callbackExporter.release();
+        check(SonyOrientation.relativeAngle(1,8)==3&&SonyOrientation.relativeAngle(1,6)==0&&SonyOrientation.relativeAngle(1,3)==1,"Sony relative-angle enum maps portrait and inverted EXIF tags");
+        check(SonyOrientation.relativeAngle(8,8)==-1&&SonyOrientation.relativeAngle(6,8)==1&&SonyOrientation.relativeAngle(2,1)==-2,"rotation delta, no-op and mirrored-transform refusal");
+        final int[] rotatedTag={1},rotationCalls={0};
+        SonyOrientation.Tags tags=new SonyOrientation.Tags(){public int read(File file){return rotatedTag[0];}};
+        SonyOrientation.Rotator rotate=new SonyOrientation.Rotator(){public boolean rotate(String id,int angle){check(id.equals("avindex://new-copy")&&angle==3,"only new-copy ID receives counterclockwise rotation");rotationCalls[0]++;rotatedTag[0]=8;return true;}};
+        String orientationReport=SonyOrientation.apply(new File("new-copy.JPG"),"avindex://new-copy",1,8,tags,rotate);
+        check(orientationReport.contains("confirmed")&&rotationCalls[0]==1,"orientation is repaired and verified");
+        SonyOrientation.apply(new File("new-copy.JPG"),"avindex://new-copy",8,8,tags,rotate);
+        check(rotationCalls[0]==1,"already-correct copy is never rotated twice");
+        rotatedTag[0]=1;
+        SonyOrientation.Rotator rejected=new SonyOrientation.Rotator(){public boolean rotate(String id,int angle){return false;}};
+        check(SonyOrientation.apply(new File("new-copy.JPG"),"avindex://new-copy",1,8,tags,rejected).contains("failed"),"failed rotation reported without editing EXIF separately");
         System.out.println("PASS: Sony reflection, export callbacks versus catalog confirmation, grain-folder readback, error handling, USB diagnostics, resource cleanup");
     }
 }

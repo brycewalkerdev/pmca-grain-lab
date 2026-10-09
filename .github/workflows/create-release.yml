@@ -1,0 +1,146 @@
+name: Create release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and upload an artifact without creating a release
+        type: boolean
+        default: false
+      draft:
+        description: Create a draft release for review
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grain-lab-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      sha: ${{ steps.identity.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Identify source build
+        id: identity
+        run: |
+          $text = Get-Content build.ps1 -Raw
+          $match = [regex]::Match($text, '(?m)^\$taskBuildNumber = ([1-9][0-9]*)\r?$')
+          if (!$match.Success) { throw 'Cannot determine the source build number.' }
+          "tag=build-$($match.Groups[1].Value)" >> $env:GITHUB_OUTPUT
+          "sha=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: msys2/setup-msys2@v2
+        id: msys
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+      - name: Install Android SDK tools
+        run: |
+          $manager = Join-Path $env:ANDROID_HOME 'cmdline-tools\latest\bin\sdkmanager.bat'
+          & $manager 'platforms;android-28' 'build-tools;35.0.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Android SDK installation failed.' }
+          "GRAIN_ANDROID_SDK=$env:ANDROID_HOME" >> $env:GITHUB_ENV
+          "GRAIN_JAVA_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+      - uses: actions/cache@v4
+        id: ndk
+        with:
+          path: ${{ runner.temp }}/grain-toolchains/android-ndk-r16b
+          key: windows-ndk-r16b-f3f1909ed1052e98dda2c79d11c22f3da28daf25
+      - name: Install legacy NDK
+        if: steps.ndk.outputs.cache-hit != 'true'
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'grain-toolchains'
+          New-Item -ItemType Directory -Force $root | Out-Null
+          $zip = Join-Path $root 'ndk.zip'
+          Invoke-WebRequest 'https://dl.google.com/android/repository/android-ndk-r16b-windows-x86_64.zip' -OutFile $zip
+          # Published checksum from android/ndk's unsupported-downloads page.
+          if ((Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant() -ne 'f3f1909ed1052e98dda2c79d11c22f3da28daf25') {
+            throw 'NDK checksum mismatch.'
+          }
+          & 7z x $zip "-o$root" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'NDK extraction failed.' }
+          Remove-Item -LiteralPath $zip
+      - name: Build, test and verify signed APK
+        env:
+          GRAIN_KEYSTORE_B64: ${{ secrets.GRAIN_KEYSTORE_B64 }}
+          GRAIN_STORE_PASSWORD: ${{ secrets.GRAIN_STORE_PASSWORD }}
+          GRAIN_KEY_PASSWORD: ${{ secrets.GRAIN_KEY_PASSWORD }}
+          GRAIN_KEY_ALIAS: grainlab
+          MSYS_LOCATION: ${{ steps.msys.outputs.msys2-location }}
+        run: |
+          if (!$env:GRAIN_KEYSTORE_B64 -or !$env:GRAIN_STORE_PASSWORD -or !$env:GRAIN_KEY_PASSWORD) {
+            throw 'Configure GRAIN_KEYSTORE_B64, GRAIN_STORE_PASSWORD and GRAIN_KEY_PASSWORD repository secrets.'
+          }
+          $env:ANDROID_NDK = Join-Path $env:RUNNER_TEMP 'grain-toolchains\android-ndk-r16b'
+          $env:GRAIN_HOST_GCC = Join-Path $env:MSYS_LOCATION 'mingw64\bin\gcc.exe'
+          $env:PATH = (Split-Path $env:GRAIN_HOST_GCC) + ';' + $env:PATH
+          $env:GRAIN_KEYSTORE = Join-Path $env:RUNNER_TEMP 'grain-release.keystore'
+          try {
+            [IO.File]::WriteAllBytes($env:GRAIN_KEYSTORE, [Convert]::FromBase64String($env:GRAIN_KEYSTORE_B64))
+            ./build.ps1
+          } finally {
+            if (Test-Path -LiteralPath $env:GRAIN_KEYSTORE) { Remove-Item -LiteralPath $env:GRAIN_KEYSTORE }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.identity.outputs.tag }}
+          path: |
+            dist/GrainLab.apk
+            dist/GrainLab.apk.sha256
+            dist/GrainLab.build.txt
+          if-no-files-found: error
+
+  release:
+    if: ${{ !inputs.dry_run }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.tag }}
+          path: dist
+      - name: Create release with APK and build identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+          DRAFT: ${{ inputs.draft }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check GrainLab.apk.sha256
+          printf '%s\n\nSource commit: %s\n' "$(cat GrainLab.build.txt)" "$SOURCE_SHA" > release-notes.txt
+          args=()
+          if [[ "$DRAFT" == "true" ]]; then args+=(--draft); fi
+          refs=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$RELEASE_TAG" --jq '.[].ref')
+          if grep -Fxq "refs/tags/$RELEASE_TAG" <<< "$refs"; then
+            echo 'This build tag already exists. Increase the source build number before releasing again.' >&2
+            exit 1
+          fi
+          # Existing releases are never overwritten. gh creates the tag at this exact commit.
+          gh release create "$RELEASE_TAG" GrainLab.apk GrainLab.apk.sha256 GrainLab.build.txt \
+            --target "$SOURCE_SHA" --title "Grain Lab $RELEASE_TAG" \
+            --notes-file release-notes.txt --generate-notes "${args[@]}"

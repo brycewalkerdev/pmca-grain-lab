@@ -117,3 +117,9 @@ Build 19 connects the save action to source-catalog decoding, non-overlapping sc
 ## On-camera native save result
 
 The user confirmed the processed image now appears in Sony playback. For a portrait image, Sony playback showed a 90-degree rotation while the PC viewer displayed it correctly. The likely remaining issue is disagreement between EXIF orientation and Sony playback rotation state; this has not yet been resolved.
+
+## Portrait orientation evidence and reconciliation
+
+Copied and verified DSC00463.JPG, GLAB0012.JPG, DSC00464.JPG and GLSAVE.TXT plus AVF_INFO into ignored out/orientation-evidence. All three JPEGs have physical dimensions 5456x3632. Original and grain backup have EXIF orientation 8; the native registered DSC copy has orientation 1. This establishes loss of the orientation tag in native saving; the earlier speculation about conflicting catalog state was not demonstrated. The correctly displayed PC file may have been the grain backup rather than the registered copy.
+
+Firmware Images.Media.rotateImage resolves the new record's unique ID and delegates to public InfraScalarMprWrapper.rotateImage(String,int). Its relative-angle enum is plus90=0, plus180=1, plus270=2, minus90=3, minus180=4, minus270=5. After new-file catalog confirmation the implementation compares backup and destination EXIF, requests the relative rotation needed to match standard tags 1/3/6/8, and verifies EXIF readback. It uses the native rotation operation rather than rewriting only the file's EXIF, so Sony can reconcile its playback metadata/thumbnail state. No-op cases skip the call; mirrored transforms are explicitly left unmodified. The repair is limited to newly created registered copies and never operates on the source or backup. Host tests verify enum mapping and idempotence. The user subsequently confirmed that Build 20 corrects rotation in Sony playback on the A5000.
