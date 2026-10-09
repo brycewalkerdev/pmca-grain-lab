@@ -4,9 +4,15 @@ A standalone PlayMemories camera app that adds grain, halation, bloom and other 
 
 ## Install
 
-Build output: `dist/GrainLab.apk`. Install through Sony-PMCA-RE / PMCA-GUI's **Install app from file**, then launch **Grain Lab** from the camera's Application List. It has a separate package (`com.bryce.grainlab`) and can coexist with Recipe Lab.
+Download `GrainLab.apk` from [GitHub Releases](https://github.com/brycewalkerdev/pmca-grain-lab/releases/latest), or build it locally into `dist/GrainLab.apk`. Install through Sony-PMCA-RE / PMCA-GUI's **Install app from file**, then launch **Grain Lab** from the camera's Application List. It has a separate package (`com.bryce.grainlab`) and can coexist with Recipe Lab.
 
 This prototype targets Android API 10 and includes `armeabi` and `armeabi-v7a` implementations. Processing, native JPEG export and standard camera playback have been tested on a Sony A5000. Other bodies remain unverified. Native saving previously lost portrait orientation metadata. The save path now reconciles the new copy through Sony's rotation API and verifies EXIF readback; the correction still needs on-camera validation.
+
+## Recent changes
+
+- **Sony playback rotation support:** newly registered copies are compared with the processed backup and corrected through Sony's rotation API when their orientation differs. Already-correct images are left as they are; existing copies are not automatically repaired. Unsupported mirrored orientations and failures are recorded in `GLSAVE.TXT`. The new correction still needs an on-camera test.
+- **GitHub release workflow:** builds and tests both ARM implementations, signs with the persistent installation key, and creates releases containing the APK, SHA-256 checksum and build timestamp. It supports draft releases and dry runs and does not overwrite existing build tags. See [release setup](docs/RELEASING.md) for signing secrets and usage; the workflow must be on the default branch before manual dispatch is available.
+- **Visible build identity:** the browser, editor and save diagnostics show the build number and UTC timestamp so installation updates can be verified on camera.
 
 ## Use
 
@@ -143,7 +149,7 @@ The browser and editor show the build number and UTC build timestamp directly be
 
 The MAIN reader retries the firmware-native `/android/mnt/sdcard/...` path if the Android `/mnt/sdcard/...` path fails. Both attempts and results are recorded. This is a fallback based on the inspected native filesystem path; support for arbitrary processed JPEGs still requires a camera test. Diagnostics use the short `GLSAVE.TXT` filename for compatibility with the camera card filesystem.
 
-Sony acceleration test now requires an indexed original and obtains its actual `avindex://` identifier from the Sony catalog. Both filesystem decoder paths failed on an original A5000 JPEG in the camera test. The updated diagnostic tests catalog-based MAIN decode, scaling and JPEG stream output without saving a new camera image. Native playback import of processed files remains unresolved.
+Sony acceleration test now requires an indexed original and obtains its actual `avindex://` identifier from the Sony catalog. Both filesystem decoder paths failed on an original A5000 JPEG in the camera test. The updated diagnostic tests catalog-based MAIN decode, scaling and JPEG stream output without saving a new camera image. The Save copy action now uses a separate processed-pixel upload and native camera-save path; playback registration has been confirmed on the A5000.
 
 Every Sony acceleration test writes its complete result, build stamp and selected image path to `GLTEST.TXT` in the SD card root, replacing the previous test report. The file is flushed before completion. Success or write failure is shown in the test dialog and kept in the app-private diagnostic record. This also records decoder failures, without requiring another processed save.
 
