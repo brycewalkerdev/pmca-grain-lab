@@ -19,7 +19,7 @@ struct FilmContext {
     DustSpot dust[33 * 25];
     float scratch_breaks[32][32];
     int needs_linear, grain_size, grain_width, grain_y, row_y, dust_y, scratch_y;
-    float ny, map_y, diffusion, edge_softness, vignette, halation, bloom;
+    float ny, map_y, diffusion, edge_softness, vignette, halation, bloom, threshold, threshold_scale;
 };
 static float bound(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
 static uint32_t hash(uint32_t n) { n ^= n >> 16; n *= 0x7feb352dU; n ^= n >> 15; n *= 0x846ca68bU; return n ^ (n >> 16); }
@@ -28,7 +28,7 @@ int film_valid(const FilmSettings *s) {
     if (!s) return 0;
     for (int i = 0; i < F_COUNT; i++) {
         if (i == F_SEED) continue;
-        int lo = i == F_SIZE || i == F_HAL_RADIUS || i == F_BLOOM_RADIUS ? 1 : i == F_THRESHOLD ? 40 : i == F_DISTORTION ? -100 : 0;
+        int lo = i == F_SIZE || i == F_HAL_RADIUS || i == F_BLOOM_RADIUS ? 1 : i == F_DISTORTION ? -100 : 0;
         int hi = i == F_SIZE ? 8 : i == F_THRESHOLD ? 95 : i == F_OUTPUT ? 1 : 100;
         if (s->v[i] < lo || s->v[i] > hi) return 0;
     }
@@ -72,6 +72,8 @@ FilmContext *film_create(const FilmSettings *s, int width, int height, int mw, i
     tables_ready = 1;
     }
     f->linear = linear_table; f->encoded = encoded_table;
+    f->threshold = f->needs_linear ? f->linear[v[F_THRESHOLD] * 255 / 100] : 0;
+    f->threshold_scale = 1.f / (1.f - f->threshold);
     if (v[F_GRAIN]) {
         f->grain_width = (width - 1) / f->grain_size + 2;
         f->grain_top = (int *)malloc(f->grain_width * sizeof(int));
@@ -183,14 +185,24 @@ int film_finish_map(FilmContext *f) {
     for (int n = 0; n < count; n++) {
         float l = (.2126f * f->base[n * 3] + .7152f * f->base[n * 3 + 1] + .0722f * f->base[n * 3 + 2]) / 65535.f;
         float mask = bound((l - threshold) / (1 - threshold), 0, 1);
-        mask *= mask;
-        f->halo[n] = (uint16_t)(mask * 65535.f);
+        /* Halation needs the unsquared highlight mask; squaring hid warm lights. */
+        f->halo[n] = (uint16_t)(mask * 65535.f + .5f);
+        mask *= mask; /* Retain the existing bloom response. */
         for (int c = 0; c < 3; c++) f->glow[n * 3 + c] = (uint16_t)(f->base[n * 3 + c] * mask);
     }
     float edge = f->mw > f->mh ? f->mw : f->mh;
     if ((f->s.v[F_DIFFUSION] || f->s.v[F_EDGE_SOFTNESS]) && blur(f->soft, f->mw, f->mh, 3, edge * .003f)) return -1;
     if (f->s.v[F_BLOOM] && blur(f->glow, f->mw, f->mh, 3, edge * f->s.v[F_BLOOM_RADIUS] / 5000.f)) return -1;
-    if (f->s.v[F_HALATION] && blur(f->halo, f->mw, f->mh, 1, edge * f->s.v[F_HAL_RADIUS] / 10000.f)) return -1;
+    if (f->s.v[F_HALATION]) {
+        if (blur(f->halo, f->mw, f->mh, 1, edge * f->s.v[F_HAL_RADIUS] / 4000.f)) return -1;
+        for (int n = 0; n < count; n++) {
+            float l = (.2126f * f->base[n * 3] + .7152f * f->base[n * 3 + 1] + .0722f * f->base[n * 3 + 2]) / 65535.f;
+            float source = bound((l - threshold) / (1 - threshold), 0, 1);
+            /* Only light spreading outside the source contributes. Uniform fields stay intact. */
+            float fringe = bound((f->halo[n] / 65535.f - source) * 3.f, 0, 1);
+            f->halo[n] = (uint16_t)(fringe * 65535.f + .5f);
+        }
+    }
     return 0;
 }
 typedef struct { int a,b,c,d; float fx,fy; } MapPoint;
@@ -261,13 +273,17 @@ void film_pixel_at(FilmContext *f, int x, int y, float source_x,float source_y,u
         MapPoint point=map_point(f->mw,f->mh,mx,my);
         float softness=bound(f->diffusion+f->edge_softness*radial,0,.9f);
         float halo=s[F_HALATION]?sample(f->halo,point,1,0)*f->halation:0;
-        float source_luma = .2126f * p[0] + .7152f * p[1] + .0722f * p[2];
-        /* Suppress tint inside bright sources; the warm fringe lives outside the source. */
-        halo *= (1 - bound(source_luma, 0, 1)) * .6f;
+        /* Protect bright cores without suppressing the whole illuminated background. */
+        if (halo > 0) {
+            float source_luma = .2126f * p[0] + .7152f * p[1] + .0722f * p[2];
+            float source_mask = bound((source_luma - f->threshold) * f->threshold_scale, 0, 1);
+            halo *= 1 - source_mask;
+        }
         for (int c = 0; c < 3; c++) {
             if (softness) p[c] += softness * (sample(f->soft,point,3,c)-p[c]);
             if (s[F_BLOOM]) p[c] += sample(f->glow,point,3,c)*f->bloom;
-            p[c] += halo * (c == 0 ? 1 : c == 1 ? .22f : .035f);
+            /* Composite a warm fringe locally. Additive red alone disappears when red clips. */
+            p[c] += halo * ((c == 0 ? 1.f : c == 1 ? .10f : .012f) - p[c]);
         }
     }
     float vignette=1-f->vignette*radial*radial;

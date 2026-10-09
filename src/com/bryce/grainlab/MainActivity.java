@@ -401,7 +401,8 @@ public final class MainActivity extends Activity {
                     text(c, fit(value(i), 216, 14), 402, y + 39, 14, ink);
                 }
                 text(c, (row + 1) + " / " + FilmSettings.ROWS, 402, 380, 13, Color.LTGRAY);
-                text(c, fit(status.length() > 0 ? status : t(R.string.processing_note), 604, 14), 14, 401, 14, 0xffd6b47a);
+                String note = status.length() > 0 ? status : !saving && row == FilmSettings.THRESHOLD ? t(R.string.threshold_hint) : t(R.string.processing_note);
+                text(c, fit(note, 604, 14), 14, 401, 14, 0xffd6b47a);
                 if (saving) { paint.setColor(0xffd6b47a); c.drawRect(14, 409, 14 + 612 * NativeGrain.progress() / 100f, 413, paint); }
                 int[] actions = {original ? R.string.original : R.string.effects, R.string.preset, R.string.save};
                 for (int i = 0; i < 3; i++) { float x = 12 + i * 208; paint.setColor(0xff40372a); c.drawRect(x, 420, x + 200, 447, paint); text(c, fit(t(actions[i]), 184, 15), x + 8, 439, 15, Color.WHITE); }
