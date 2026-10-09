@@ -88,7 +88,9 @@ final class SonyCameraSave {
                         stage("Waiting briefly for native file/catalog publication");
                         new Handler(thread.getLooper()).postDelayed(new Runnable(){public void run(){exported(0);}},400);return;
                     }
-                    finish(count==1,count==1?"Sony export callback "+code+"; AV index confirmed: "+GrainFiles.relative(card,found)+"; grain backup retained":
+                    String orientation="";
+                    if(count==1){stage("Reconciling native playback orientation");orientation="; "+SonyOrientation.sync(resolver,found,processed);stage(orientation);}
+                    finish(count==1,count==1?"Sony export callback "+code+"; AV index confirmed: "+GrainFiles.relative(card,found)+orientation+"; grain backup retained":
                         "Sony export callback "+code+(cameraSaved?" (save succeeded)":" (save failed)")+"; catalog readback not confirmed ("+count+"). New files: "+candidates+"; grain backup retained");
                 }catch(Exception e){finish(false,"Sony export callback "+code+"; verification failed: "+SonyGallery.error(e));}
                  catch(LinkageError e){finish(false,e.toString());}

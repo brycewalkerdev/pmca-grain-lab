@@ -1,7 +1,7 @@
 param([string]$AndroidTools = $env:GRAIN_ANDROID_TOOLS, [string]$Python = 'python', [switch]$TestsOnly)
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
-$taskBuildNumber = 19
+$taskBuildNumber = 20
 $taskBuildTime = [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", [Globalization.CultureInfo]::InvariantCulture)
 Set-Location -LiteralPath $taskRoot
 function Checked([string]$Executable, [string[]]$Arguments) {
@@ -25,7 +25,7 @@ Checked "$taskJava\java.exe" @('-cp','out\tests','com.bryce.grainlab.GrainFilesT
 Checked "$taskJava\java.exe" @('-cp','out\tests','com.bryce.grainlab.FilmSettingsTest')
 $taskSonyTests=@(Get-ChildItem tests\android,tests\com\sony -Recurse -Filter '*.java' | ForEach-Object FullName)
 Checked "$taskJava\javac.exe" (@('--release','8','-encoding','UTF-8','-cp','out\tests','-d','out\tests',
-    'src\com\bryce\grainlab\SonyGallery.java','src\com\bryce\grainlab\SonyCameraSave.java','src\com\bryce\grainlab\SonyImageUpload.java','src\com\bryce\grainlab\SonyImageReader.java','src\com\bryce\grainlab\SonyProbe.java','src\com\bryce\grainlab\SonyBufferProbe.java','src\com\bryce\grainlab\SonyNativeSamples.java','src\com\bryce\grainlab\SonyWriteProbe.java','src\com\bryce\grainlab\SonyJpegStream.java','src\com\bryce\grainlab\NativeGrain.java','src\com\bryce\grainlab\SonyAcceleration.java','tests\com\bryce\grainlab\SonyIntegrationTest.java')+$taskSonyTests)
+    'src\com\bryce\grainlab\SonyGallery.java','src\com\bryce\grainlab\SonyCameraSave.java','src\com\bryce\grainlab\SonyOrientation.java','src\com\bryce\grainlab\SonyImageUpload.java','src\com\bryce\grainlab\SonyImageReader.java','src\com\bryce\grainlab\SonyProbe.java','src\com\bryce\grainlab\SonyBufferProbe.java','src\com\bryce\grainlab\SonyNativeSamples.java','src\com\bryce\grainlab\SonyWriteProbe.java','src\com\bryce\grainlab\SonyJpegStream.java','src\com\bryce\grainlab\NativeGrain.java','src\com\bryce\grainlab\SonyAcceleration.java','tests\com\bryce\grainlab\SonyIntegrationTest.java')+$taskSonyTests)
 Checked "$taskJava\java.exe" @('-cp','out\tests','com.bryce.grainlab.SonyIntegrationTest')
 Checked $Python @('build-native.py','--host')
 if ($TestsOnly) { return }

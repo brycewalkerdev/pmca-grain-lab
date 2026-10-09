@@ -6,7 +6,7 @@ A standalone PlayMemories camera app that adds grain, halation, bloom and other 
 
 Build output: `dist/GrainLab.apk`. Install through Sony-PMCA-RE / PMCA-GUI's **Install app from file**, then launch **Grain Lab** from the camera's Application List. It has a separate package (`com.bryce.grainlab`) and can coexist with Recipe Lab.
 
-This prototype targets Android API 10 and includes `armeabi` and `armeabi-v7a` implementations. Processing, native JPEG export and standard camera playback have been tested on a Sony A5000. Other bodies remain unverified. Known issue: a portrait result may appear rotated 90 degrees in Sony playback while appearing correctly on a PC; EXIF and Sony playback rotation state need reconciliation.
+This prototype targets Android API 10 and includes `armeabi` and `armeabi-v7a` implementations. Processing, native JPEG export and standard camera playback have been tested on a Sony A5000. Other bodies remain unverified. Native saving previously lost portrait orientation metadata. The save path now reconciles the new copy through Sony's rotation API and verifies EXIF readback; the correction still needs on-camera validation.
 
 ## Use
 
@@ -51,7 +51,7 @@ A native uploader reads the processed JPEG as full-range YCbCr scanlines, packs 
 
 The asynchronous Sony JpegExporter camera-save overload receives the populated image and external media ID. Sony chooses the normal DCIM filename/folder. A successful callback is followed by short bounded retries looking for exactly one newly created JPEG confirmed in Sony's native catalog. A preexisting file cannot confirm a new save. Failure retains the grain backup. Callback success without catalog confirmation remains explicitly unconfirmed for playback. Save timings and the backup folder's `GLSAVE.TXT` describe upload, callback and destination.
 
-The camera-save wait is bounded to 90 seconds; outstanding native resources remain alive until the real callback and further native saves are blocked in the meantime. No raw database insert/edit or automatic retry of the camera save is performed. Native camera saving and playback have been confirmed on the A5000. Orientation metadata still needs refinement; portrait playback may disagree with PC viewers. Existing grain copies are not imported automatically, and the selected source must have a Sony catalog entry.
+The camera-save wait is bounded to 90 seconds; outstanding native resources remain alive until the real callback and further native saves are blocked in the meantime. No raw database insert/edit or automatic retry of the camera save is performed. Native camera saving and playback have been confirmed on the A5000. Portrait orientation is now reconciled through Sony's rotation API after registration; verify the correction on-camera and in a PC viewer. Existing grain copies are not imported automatically, and the selected source must have a Sony catalog entry.
 
 ## Saving speed and diagnostics
 
@@ -162,3 +162,5 @@ Build 19 replaces the failed file-URI processed-image decoder route with the pro
 The font subset helper is adapted from Recipe Lab under the MIT terms in `tools/LICENSE.recipe-lab`. Font assets retain their SIL Open Font License notice; vendored JPEG libraries retain their upstream licenses.
 
 This repository is standalone. For a portable build, configure `GRAIN_ANDROID_TOOLS`, `ANDROID_NDK`, and `GRAIN_HOST_GCC`; local fallbacks also recognize sibling tool repositories. Font regeneration uses the bundled helper and does not require a Recipe Lab checkout.
+
+After a newly created JPEG is uniquely confirmed in the Sony catalog, Grain Lab compares its EXIF orientation with the processed backup. Standard 0/90/180/270-degree differences are corrected using Sony's own rotate operation, then checked by reading the saved EXIF tag. Already-correct copies are not rotated. Unsupported mirrored orientations and API failures are reported in GLSAVE.TXT; no separate EXIF rewrite or original-file edit is performed. Existing saved copies are not automatically repaired.
