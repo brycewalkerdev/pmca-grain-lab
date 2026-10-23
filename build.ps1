@@ -2,7 +2,7 @@ param([string]$AndroidTools = $env:GRAIN_ANDROID_TOOLS, [string]$Python = 'pytho
     [string]$JavaHome = $env:GRAIN_JAVA_HOME, [string]$AndroidSdk = $env:GRAIN_ANDROID_SDK)
 $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
-$taskBuildNumber = 20
+$taskBuildNumber = 21
 $taskBuildTime = [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", [Globalization.CultureInfo]::InvariantCulture)
 Set-Location -LiteralPath $taskRoot
 function Checked([string]$Executable, [string[]]$Arguments) {

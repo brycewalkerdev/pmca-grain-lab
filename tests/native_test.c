@@ -97,7 +97,52 @@ static FilmContext *effect_map(FilmSettings *s, int bright) {
     }
     CHECK(!film_finish_map(f), "effect blur"); return f;
 }
+static FilmContext *lamp_map(const FilmSettings *s, int background, int source, int uniform) {
+    int mapped=film_needs_map(s);
+    FilmContext *f=film_create(s,256,128,mapped?256:0,mapped?128:0);CHECK(f,"lamp map allocation");
+    unsigned char row[256*3];
+    for(int y=0;y<128;y++){
+        for(int x=0;x<256;x++)for(int c=0;c<3;c++)
+            row[x*3+c]=!uniform&&x>=128&&x<=166&&y>=32&&y<=96?source:background;
+        film_feed(f,row,y,256,128);
+    }
+    CHECK(!film_finish_map(f),"lamp map finish");return f;
+}
+static void halation_checks(void) {
+    FilmSettings s={{0,2,1,100,30,75,0,40,0,0,0,0,0,0,0,0,0,0,0}};
+    /* A clipped-red yellow background must still acquire a visible warm fringe. */
+    FilmContext *f=lamp_map(&s,180,255,0);
+    unsigned char warm[3]={255,180,70};film_pixel(f,125,64,warm);
+    CHECK(warm[0]>=253&&warm[1]<170,"visible halation on clipped-red background");
+    unsigned char core[3]={255,255,255};film_pixel(f,147,64,core);
+    CHECK(core[0]==255&&core[1]==255&&core[2]==255,"white core stays white");film_free(f);
+    s.v[F_HALATION]=25;f=lamp_map(&s,180,255,0);
+    unsigned char mild[3]={255,180,70};film_pixel(f,125,64,mild);film_free(f);
+    CHECK(mild[1]>warm[1],"halation strength controls fringe intensity");
+    s.v[F_HALATION]=100;f=lamp_map(&s,180,255,1);
+    unsigned char flat[3]={180,180,180};film_pixel(f,125,64,flat);film_free(f);
+    CHECK(flat[0]==180&&flat[1]==180&&flat[2]==180,"uniform bright field has no halo tint");
+    s.v[F_THRESHOLD]=95;f=lamp_map(&s,32,200,0);
+    unsigned char high[3]={32,32,32};film_pixel(f,125,64,high);film_free(f);
+    s.v[F_THRESHOLD]=60;f=lamp_map(&s,32,200,0);
+    unsigned char low[3]={32,32,32};film_pixel(f,125,64,low);film_free(f);
+    CHECK(high[0]==32&&low[0]>high[0]+15,"lower threshold activates dimmer highlights");
+    s.v[F_THRESHOLD]=75;f=lamp_map(&s,32,255,0);
+    unsigned char narrow[3]={32,32,32};film_pixel(f,117,64,narrow);film_free(f);
+    s.v[F_HAL_RADIUS]=100;f=lamp_map(&s,32,255,0);
+    unsigned char wide[3]={32,32,32};film_pixel(f,117,64,wide);film_free(f);
+    CHECK(wide[0]>narrow[0],"spread extends the fringe outside the source");
+    s.v[F_HALATION]=0;f=lamp_map(&s,32,255,0);
+    unsigned char off[3]={32,32,32};film_pixel(f,125,64,off);film_free(f);
+    CHECK(off[0]==32&&off[1]==32&&off[2]==32,"halation Off remains unchanged");
+    s.v[F_HALATION]=100;s.v[F_THRESHOLD]=0;CHECK(film_valid(&s),"zero threshold accepted natively");
+    f=lamp_map(&s,0,200,0);unsigned char zero[3]={0,0,0};film_pixel(f,125,64,zero);film_free(f);
+    CHECK(zero[0]>zero[1]&&zero[1]>=zero[2],"zero threshold produces a finite warm fringe");
+    s.v[F_THRESHOLD]=96;CHECK(!film_valid(&s),"threshold above 95 rejected natively");
+    puts("PASS: clipped-red halation, bright-core protection, uniform fields, intensity, threshold and spread");
+}
 static void effect_checks(void) {
+    halation_checks();
     FilmSettings s = {{0,2,123,0,100,75,0,100,0,0,0,0,0,0,0,0}};
     unsigned char p[3]; FilmContext *f;
     s.v[F_HALATION] = 100; f = effect_map(&s, 1); p[0]=p[1]=p[2]=32; film_pixel(f,61,64,p);
@@ -176,6 +221,8 @@ static void pixel_equivalence(void){
         {{100,1,0,0,30,75,0,40,0,100,100,100,100,100,0,0}}};
     int worst=0;long count=0;
     for(int dimension=0;dimension<3;dimension++)for(int test=0;test<6;test++){
+        /* Halation was deliberately retuned; the frozen reference still covers every other effect. */
+        cases[test].v[F_HALATION]=0;
         int w=dimensions[dimension][0],h=dimensions[dimension][1];
         int map=film_needs_map(&cases[test]);
         FilmContext *f=film_create(&cases[test],w,h,map?32:0,map?24:0);

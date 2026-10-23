@@ -6,6 +6,9 @@ public final class FilmSettingsTest {
     private static void check(boolean ok, String message) { if (!ok) throw new AssertionError(message); }
     public static void main(String[] args) throws Exception {
         int[] v = FilmSettings.defaults(); check(FilmSettings.valid(v), "valid defaults");
+        FilmSettings.adjust(v, FilmSettings.THRESHOLD, -1);
+        check(v[FilmSettings.THRESHOLD] == 74, "threshold adjusts in one-percent steps");
+        v[FilmSettings.THRESHOLD] = 0; check(FilmSettings.valid(v), "zero threshold accepted");
         for (int i = 0; i < FilmSettings.COUNT; i++) {
             if (i == FilmSettings.SEED) continue;
             v = FilmSettings.defaults(); for (int n = 0; n < 100; n++) FilmSettings.adjust(v, i, -1);
